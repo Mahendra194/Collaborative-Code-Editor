@@ -45,6 +45,20 @@ const Room = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  // Brief "Copied!" confirmation after copying the room link.
+  const [copied, setCopied] = useState(false);
+
+  // Copy the current room URL to the clipboard, showing a 2s confirmation.
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API can fail (e.g. non-secure context) — ignore silently.
+    }
+  };
+
   // Execution state
   const [stdin, setStdin] = useState("");
   const [output, setOutput] = useState(null);
@@ -440,6 +454,14 @@ const Room = () => {
             ← Back
           </button>
           <h2 style={{ marginLeft: 16, display: "inline" }}>{room?.name}</h2>
+          <button
+            className="secondary"
+            style={{ marginLeft: 12 }}
+            onClick={handleCopyLink}
+            title="Copy this room's link"
+          >
+            {copied ? "✓ Copied!" : "🔗 Copy Room Link"}
+          </button>
         </div>
         <div className="header-controls">
           <button

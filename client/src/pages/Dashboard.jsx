@@ -15,6 +15,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  // roomId whose link was just copied, for a brief per-card confirmation.
+  const [copiedId, setCopiedId] = useState("");
 
   const loadRooms = async () => {
     try {
@@ -43,6 +45,18 @@ const Dashboard = () => {
       setError(err.response?.data?.message || "Failed to create room");
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleCopyLink = async (e, roomId) => {
+    e.stopPropagation(); // don't trigger the card's navigate
+    const url = `${window.location.origin}/room/${roomId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(roomId);
+      setTimeout(() => setCopiedId(""), 2000);
+    } catch {
+      // Clipboard API can fail (e.g. non-secure context) — ignore silently.
     }
   };
 
@@ -103,12 +117,21 @@ const Dashboard = () => {
               <p className="muted">
                 Created: {new Date(room.createdAt).toLocaleDateString()}
               </p>
-              <button
-                className="danger"
-                onClick={(e) => handleDelete(e, room.roomId)}
-              >
-                Delete
-              </button>
+              <div className="room-card-actions">
+                <button
+                  className="secondary"
+                  onClick={(e) => handleCopyLink(e, room.roomId)}
+                  title="Copy room link"
+                >
+                  {copiedId === room.roomId ? "✓ Copied!" : "🔗 Copy Link"}
+                </button>
+                <button
+                  className="danger"
+                  onClick={(e) => handleDelete(e, room.roomId)}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
           ))}
         </div>
