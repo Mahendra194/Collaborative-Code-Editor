@@ -8,6 +8,7 @@ import {
   createSnapshot,
   deleteRoom,
   toggleLock,
+  kickUser,
 } from "../controllers/roomController.js";
 import { protect } from "../middleware/auth.js";
 
@@ -24,5 +25,6 @@ router.get("/:roomId/history", protect, getHistory);
 router.post("/:roomId/history/snapshot", protect, createSnapshot);
 router.delete("/:roomId", protect, deleteRoom);
 router.patch("/:roomId/lock", protect, toggleLock);
+router.post("/:roomId/kick/:userId", protect, kickUser);
 
 export default router;

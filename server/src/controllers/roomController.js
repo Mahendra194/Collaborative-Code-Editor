@@ -3,6 +3,7 @@ import { Room } from "../models/Room.js";
 import { ChatMessage } from "../models/ChatMessage.js";
 import { CodeEvent } from "../models/CodeEvent.js";
 import redis from "../config/redis.js";
+import { kickUser as kickUserSocket } from "../socket/roomSocket.js";
 
 // POST /api/rooms/create  (protected)
 export const createRoom = async (req, res) => {
@@ -154,6 +155,31 @@ export const toggleLock = async (req, res) => {
     await room.save();
 
     return res.status(200).json({ room });
+  } catch (err) {
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// POST /api/rooms/:roomId/kick/:userId  (protected, owner only) — removes the
+// target user from the room and notifies them via the socket layer.
+export const kickUser = async (req, res) => {
+  try {
+    const { roomId, userId } = req.params;
+    const room = await Room.findOne({ roomId });
+    if (!room) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+    if (room.owner.toString() !== req.user._id.toString()) {
+      return res
+        .status(403)
+        .json({ message: "Only the room owner can kick users" });
+    }
+    if (userId === req.user._id.toString()) {
+      return res.status(400).json({ message: "You cannot kick yourself" });
+    }
+
+    await kickUserSocket(roomId, userId);
+    return res.status(200).json({ message: "User kicked" });
   } catch (err) {
     return res.status(500).json({ message: "Server error", error: err.message });
   }

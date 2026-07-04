@@ -23,3 +23,6 @@ export const deleteRoom = (roomId) =>
 
 export const toggleLock = (roomId) =>
   api.patch(`/rooms/${roomId}/lock`).then((r) => r.data.room);
+
+export const kickUser = (roomId, userId) =>
+  api.post(`/rooms/${roomId}/kick/${userId}`).then((r) => r.data);

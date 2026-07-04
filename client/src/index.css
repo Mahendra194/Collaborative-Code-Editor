@@ -388,6 +388,8 @@ button.danger {
 }
 
 .user-list li {
+  display: flex;
+  align-items: center;
   padding: 8px 0;
   font-size: 14px;
   color: #e2e8f0;
@@ -396,6 +398,21 @@ button.danger {
 
 .user-list li:last-child {
   border-bottom: none;
+}
+
+.kick-btn {
+  margin-left: auto;
+  padding: 0 7px;
+  font-size: 12px;
+  line-height: 20px;
+  background: transparent;
+  color: #94a3b8;
+  border-radius: 4px;
+}
+
+.kick-btn:hover {
+  background: #7f1d1d;
+  color: #fff;
 }
 
 /* Chat panel */
@@ -417,8 +434,35 @@ button.danger {
 }
 
 .chat-message {
+  display: flex;
+  flex-direction: column;
+  max-width: 85%;
   font-size: 13px;
   line-height: 1.4;
+}
+
+/* Own messages align right, others left — standard chat bubble style. */
+.chat-message.own {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-message.other {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.chat-bubble {
+  margin-top: 3px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  border-left: 3px solid #64748b;
+}
+
+.chat-message.own .chat-bubble {
+  border-left: none;
+  border-right: 3px solid #64748b;
 }
 
 .chat-message-head {

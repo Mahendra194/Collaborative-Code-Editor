@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import { useAuth } from "../context/AuthContext.jsx";
-import { getRoom, getChatHistory, getHistory } from "../api/rooms.js";
+import { getRoom, getChatHistory, getHistory, kickUser } from "../api/rooms.js";
 import { executeCode } from "../api/execute.js";
 import socket from "../socket/socket.js";
 import ReplayControls from "../components/ReplayControls.jsx";
@@ -56,6 +56,20 @@ const Room = () => {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Clipboard API can fail (e.g. non-secure context) — ignore silently.
+    }
+  };
+
+  // Only the room owner may kick others. getRoom populates owner as an object.
+  const isOwner = !!user && room?.owner?._id === user._id;
+
+  // Owner-only: remove another user from the room. The server emits `user_left`
+  // (updating everyone's list) and `kicked` to the target, so no local removal
+  // is needed here.
+  const handleKick = async (userId) => {
+    try {
+      await kickUser(roomId, userId);
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to kick user");
     }
   };
 
@@ -215,8 +229,14 @@ const Room = () => {
       navigate("/dashboard");
     };
 
+    const handleKicked = () => {
+      alert("You have been kicked from this room");
+      navigate("/dashboard");
+    };
+
     socket.on("room_state", handleRoomState);
     socket.on("room_full", handleRoomFull);
+    socket.on("kicked", handleKicked);
     socket.on("code_update", handleCodeUpdate);
     socket.on("language_updated", handleLanguageUpdated);
     socket.on("user_joined", handleUserJoined);
@@ -228,6 +248,7 @@ const Room = () => {
       socket.emit("leave_room", { roomId, userId: user._id });
       socket.off("room_state", handleRoomState);
       socket.off("room_full", handleRoomFull);
+      socket.off("kicked", handleKicked);
       socket.off("code_update", handleCodeUpdate);
       socket.off("language_updated", handleLanguageUpdated);
       socket.off("user_joined", handleUserJoined);
@@ -587,6 +608,15 @@ const Room = () => {
                     style={{ background: colorForUser(u.userId) }}
                   />
                   {u.username}
+                  {isOwner && (
+                    <button
+                      className="kick-btn"
+                      onClick={() => handleKick(u.userId)}
+                      title={`Kick ${u.username}`}
+                    >
+                      ✕
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -595,25 +625,31 @@ const Room = () => {
           <div className="chat-panel">
             <h3>Chat</h3>
             <div className="chat-messages">
-              {messages.map((msg, i) => (
-                <div key={i} className="chat-message">
-                  <div className="chat-message-head">
-                    <span
-                      className="chat-username"
-                      style={{ color: colorForUser(msg.userId || "") }}
-                    >
-                      {msg.username}
-                    </span>
-                    <span className="chat-time">
-                      {new Date(msg.timestamp).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
+              {messages.map((msg, i) => {
+                const own = msg.userId === user?._id;
+                const color = colorForUser(msg.userId || "");
+                return (
+                  <div
+                    key={i}
+                    className={`chat-message ${own ? "own" : "other"}`}
+                  >
+                    <div className="chat-message-head">
+                      <span className="chat-username" style={{ color }}>
+                        {msg.username}
+                      </span>
+                      <span className="chat-time">
+                        {new Date(msg.timestamp).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                    <div className="chat-bubble" style={{ borderColor: color }}>
+                      <div className="chat-text">{msg.message}</div>
+                    </div>
                   </div>
-                  <div className="chat-text">{msg.message}</div>
-                </div>
-              ))}
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
             <div className="chat-input-row">

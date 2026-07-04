@@ -41,6 +41,15 @@ const maybeSnapshot = async (roomId, code, userId) => {
 // on disconnect (the disconnect event carries no payload from the client).
 const socketIdentity = new Map();
 
+// Reverse lookup `${roomId}:${userId}` → socket.id, so an out-of-band action
+// like an HTTP kick can find and message a specific user's live socket.
+const userSocketKey = (roomId, userId) => `${roomId}:${userId}`;
+const userSockets = new Map();
+
+// Set when registerRoomEvents runs, so exported helpers (e.g. kickUser) can
+// reach the io instance to emit and disconnect sockets.
+let ioRef = null;
+
 // Refresh the TTL on all three keys so an active room stays alive and
 // evicts together once it goes idle.
 const touchTTL = async (roomId) => {
@@ -51,10 +60,10 @@ const touchTTL = async (roomId) => {
   ]);
 };
 
-// Removes a user from a room's users list (in Redis) and notifies the room.
-// Uses KEEPTTL so the keys keep their remaining TTL and evict naturally —
-// we never delete keys here, even when the room becomes empty.
-const removeUser = async (socket, roomId, userId) => {
+// Removes a user from a room's users list in Redis. Uses KEEPTTL so the keys
+// keep their remaining TTL and evict naturally — we never delete keys here,
+// even when the room becomes empty.
+const removeUserFromRedis = async (roomId, userId) => {
   try {
     const usersRaw = await redis.get(usersKey(roomId));
     const users = usersRaw ? JSON.parse(usersRaw) : [];
@@ -65,12 +74,42 @@ const removeUser = async (socket, roomId, userId) => {
     const dedupedUsers = Array.from(usersMap.values());
     await redis.set(usersKey(roomId), JSON.stringify(dedupedUsers), "KEEPTTL");
   } catch (err) {
-    console.error("removeUser error:", err.message);
+    console.error("removeUserFromRedis error:", err.message);
   }
+};
+
+// Removes a user from a room (Redis) and notifies the rest of the room.
+const removeUser = async (socket, roomId, userId) => {
+  await removeUserFromRedis(roomId, userId);
   socket.to(roomId).emit("user_left", { userId });
 };
 
+// Owner-initiated kick, invoked from the HTTP layer (authorization is checked
+// there). Tells the target's socket it was kicked, drops it from the room and
+// Redis, and notifies everyone else. Safe to call even if the user has no live
+// socket (e.g. already disconnected) — the Redis removal still runs.
+export const kickUser = async (roomId, userId) => {
+  await removeUserFromRedis(roomId, userId);
+
+  const key = userSocketKey(roomId, userId);
+  const socketId = userSockets.get(key);
+  if (socketId && ioRef) {
+    const target = ioRef.sockets.sockets.get(socketId);
+    if (target) {
+      target.emit("kicked");
+      target.leave(roomId);
+      // Forget the identity so the target's later disconnect doesn't run
+      // removeUser again and emit a redundant user_left.
+      socketIdentity.delete(socketId);
+    }
+    userSockets.delete(key);
+  }
+
+  if (ioRef) ioRef.to(roomId).emit("user_left", { userId });
+};
+
 export const registerRoomEvents = (io) => {
+  ioRef = io;
   io.on("connection", (socket) => {
     socket.on("join_room", async ({ roomId, userId, username }) => {
       try {
@@ -108,6 +147,8 @@ export const registerRoomEvents = (io) => {
         socket.data.userId = userId;
         socket.data.username = username;
         socketIdentity.set(socket.id, { roomId, userId });
+        // Reverse lookup so an HTTP kick can find this user's socket.
+        userSockets.set(userSocketKey(roomId, userId), socket.id);
 
         const usersMap = new Map(existingUsers.map((u) => [u.userId, u]));
         usersMap.set(userId, { userId, username });
@@ -167,6 +208,7 @@ export const registerRoomEvents = (io) => {
       // Forget this socket's identity so the later disconnect event doesn't
       // run removeUser a second time and emit a redundant user_left.
       socketIdentity.delete(socket.id);
+      userSockets.delete(userSocketKey(roomId, userId));
       await removeUser(socket, roomId, userId);
     });
 
@@ -206,6 +248,11 @@ export const registerRoomEvents = (io) => {
       if (identity) {
         const { roomId, userId } = identity;
         socketIdentity.delete(socket.id);
+        // Only drop the reverse-lookup entry if it still points at THIS socket
+        // — a fast reconnect may have already registered a newer socket id.
+        if (userSockets.get(userSocketKey(roomId, userId)) === socket.id) {
+          userSockets.delete(userSocketKey(roomId, userId));
+        }
         await removeUser(socket, roomId, userId);
       }
     });
